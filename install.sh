@@ -83,7 +83,31 @@ else
     echo "  -> 配置文件 '$CONFIG_FILE' 已存在，跳过创建。"
 fi
 
+# [ 步骤 5: 配置用户的 Shell ]
+step "步骤 5/5: 更新 Shell 配置文件..."
+SHELL_CONFIG_SNIPPET="\n# --- Terminal Explainer ---\nsource /usr/local/share/terminal-explainer/explain.sh\n"
 
+# 配置 .bashrc
+BASHRC_PATH="$HOME_DIR/.bashrc"
+if [ -f "$BASHRC_PATH" ]; then
+    if ! grep -q "terminal-explainer/explain.sh" "$BASHRC_PATH"; then
+        echo "  -> 正在向 $BASHRC_PATH 中添加配置..."
+        echo -e "$SHELL_CONFIG_SNIPPET" >> "$BASHRC_PATH"
+    else
+        echo "  -> .bashrc 配置已存在，跳过。"
+    fi
+fi
+
+# 配置 .zshrc
+ZSHRC_PATH="$HOME_DIR/.zshrc"
+if [ -f "$ZSHRC_PATH" ]; then
+    if ! grep -q "terminal-explainer/explain.sh" "$ZSHRC_PATH"; then
+        echo "  -> 正在向 $ZSHRC_PATH 中添加配置..."
+        echo -e "$SHELL_CONFIG_SNIPPET" >> "$ZSHRC_PATH"
+    else
+        echo "  -> .zshrc 配置已存在，跳过。"
+    fi
+fi  
 
 # --- 安装完成 ---
 echo -e "\n\033[1;32m✅ 安装成功！\033[0m"
