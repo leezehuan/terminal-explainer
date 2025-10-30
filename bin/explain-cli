@@ -4,104 +4,120 @@ import sys
 import os
 import requests
 import json
-import configparser
-from pathlib import Path
+import configparser  # 用于解析 .ini 配置文件
+from pathlib import Path # 用于优雅地处理文件路径
 
 def load_config():
     """
     加载配置信息。
+    配置的唯一来源是 ~/.config/terminal-explainer/config.ini 文件。
+    
+    返回:
+        一个包含配置信息的字典 (dict)。
     """
-    print("[调试信息] 正在加载配置文件...")
+    # 1. 设置默认配置
     config = {
         'api_key': None,
         'api_url': 'https://api.openai.com/v1/chat/completions',
         'model': 'gpt-3.5-turbo'
     }
 
+    # 2. 从配置文件中读取配置，并覆盖默认值
     config_path = Path.home() / '.config' / 'terminal-explainer' / 'config.ini'
     
+    # 检查配置文件是否存在
     if not config_path.exists():
-        return None, f"\n\033[31m错误: 配置文件不存在！\n[调试信息] 脚本在路径 '{config_path}' 未找到配置文件。\033[0m"
+        # 如果配置文件不存在，直接返回错误，因为这是唯一的配置方式
+        return None, f"\n\033[31m错误: 配置文件不存在！\n请确保 ~/.config/terminal-explainer/config.ini 文件存在并已正确配置。\033[0m"
 
-    print(f"[调试信息] 找到配置文件: {config_path}")
     parser = configparser.ConfigParser()
     parser.read(config_path, encoding='utf-8')
     
     if 'API' in parser:
         api_config = parser['API']
-        print("[调试信息] 成功读取 [API]区块。")
-        config['api_key'] = api_config.get('api_key')
-        config['api_url'] = api_config.get('api_url')
-        config['model'] = api_config.get('model')
-        
-        # 打印读取到的值，隐藏api_key敏感部分
-        safe_key = config.get('api_key')
-        if safe_key and len(safe_key) > 8:
-            safe_key = f"{safe_key[:4]}...{safe_key[-4:]}"
-        print(f"[调试信息] 读取到的配置: api_key={safe_key}, api_url={config.get('api_url')}, model={config.get('model')}")
-
-    else:
-        print("[调试信息] 警告: 配置文件中未找到 [API] 区块。")
-
+        config['api_key'] = api_config.get('api_key', config['api_key'])
+        config['api_url'] = api_config.get('api_url', config['api_url'])
+        config['model'] = api_config.get('model', config['model'])
+    
+    # 3. 清理可能存在的占位符
     if config['api_key'] == 'YOUR_API_KEY_HERE':
-        print("[调试信息] 检测到 api_key 仍是占位符 'YOUR_API_KEY_HERE'，将其视为空值。")
         config['api_key'] = None
 
-    return config, None
+    return config, None # 返回配置和空的错误信息
 
 def get_llm_analysis(user_command, command_output, config):
     """
-    调用大语言模型 API。
+    接收命令、输出和配置，调用大语言模型 API 来进行分析。
     """
-    print("[调试信息] 进入 get_llm_analysis 函数。")
     api_key = config.get('api_key')
-    
-    if not api_key:
-        return "\n\033[31m错误: API Key 未设置。\n[调试信息] 原因: 从配置文件加载后，api_key 的值为空。请检查您的配置文件。\033[0m"
-    
-    print("[调试信息] API Key 存在，准备发送网络请求...")
-    # ... 省略了 prompt 和 headers 的构造，它们不太可能出错 ...
     api_url = config.get('api_url')
     model = config.get('model')
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-    prompt = f"命令: {user_command}\n输出: {command_output}\n请解释。" # 简化 prompt 用于调试
-    data = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.5}
+
+    if not api_key:
+        return "\n\033[31m错误: API Key 未在配置文件中设置。\n请编辑 ~/.config/terminal-explainer/config.ini 并填入您的 api_key。\033[0m"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+
+    prompt = f"""
+    你是一个精通中文的 Linux 系统专家和命令行大师。
+    用户在终端执行了以下命令，并得到了相应的输出。
+    请你用简洁、清晰、易于理解的中文来分析和解释这个输出。
+
+    - 如果命令成功执行，请解释输出结果中各部分的核心含义。
+    - 如果命令执行失败或返回了错误信息，请指出错误的核心原因，并提供一个或多个可能的解决方案。
+    - 你的解释应该专业、准确，并且对初学者友好。
+
+    # 用户执行的命令:
+    {user_command}
+
+    # 命令产生的输出:
+    {command_output}
+    
+    # 你的专家级解释:
+    """
+
+    data = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.5,
+    }
 
     try:
         response = requests.post(api_url, headers=headers, json=data, timeout=20)
-        print(f"[调试信息] 收到服务器响应，状态码: {response.status_code}")
         response.raise_for_status()
         result_json = response.json()
         explanation = result_json["choices"][0]["message"]["content"]
         formatted_explanation = f"\n\033[1;34m🤖 AI 专家解释:\033[0m\n---\n{explanation}\n---"
         return formatted_explanation
-    except Exception as e:
-        # 捕获所有异常并打印详细信息
-        return f"\n\033[31m错误: 在网络请求或解析过程中发生未知异常。\n[调试信息] 异常类型: {type(e).__name__}\n[调试信息] 异常详情: {e}\033[0m"
+    except requests.exceptions.Timeout:
+        return "\n\033[31m错误: 请求大语言模型 API 超时。请检查您的网络连接或代理设置。\033[0m"
+    except requests.exceptions.HTTPError as e:
+        return f"\n\033[31m错误: HTTP 请求失败，状态码: {e.response.status_code}。\n服务器响应:\n{e.response.text}\033[0m"
+    except json.JSONDecodeError:
+        return f"\n\033[31m错误: 解析 API 响应失败 (不是有效的 JSON)。\n收到的原始响应内容:\n---\n{response.text}\n---\033[0m"
+    except (KeyError, IndexError):
+        return f"\n\033[31m错误: 解析 JSON 成功，但数据结构不符合预期。\n收到的 JSON 数据:\n{response.json()}\033[0m"
+    except requests.exceptions.RequestException as e:
+        return f"\n\033[31m错误: 网络请求失败: {e}\033[0m"
 
 
 if __name__ == "__main__":
-    # --- 脚本入口 ---
-    print("\n--- [调试模式] ---")
-    print("explain-cli 脚本已启动。")
-    
     app_config, error_message = load_config()
 
+    # 如果加载配置时就发生错误 (如文件不存在)，直接打印错误并退出
     if error_message:
         print(error_message)
         sys.exit(1)
     
     if len(sys.argv) != 3:
-        print(f"用法: explain-cli \"<命令>\" \"<输出>\"\n[调试信息] 收到的参数数量: {len(sys.argv)}, 内容: {sys.argv}")
+        print("用法: explain-cli \"<要执行的命令>\" \"<命令的输出>\"")
         sys.exit(1)
 
-    print("[调试信息] 参数数量正确，准备调用分析函数...")
     user_command_arg = sys.argv[1]
     command_output_arg = sys.argv[2]
     
     analysis = get_llm_analysis(user_command_arg, command_output_arg, app_config)
-    
-    print("\n--- [最终输出] ---")
     print(analysis)
-    print("--- [调试结束] ---")
-
