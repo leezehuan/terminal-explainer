@@ -1,0 +1,17 @@
+# Terminal Explainer 配置文件
+#
+# 安装后，此文件会被复制到 ~/.config/terminal-explainer/config.ini
+# 请在该文件中填入你的个人配置。
+
+[API]
+# 你的 API Key。这是必须填写的项。
+# 环境变量 OPENAI_API_KEY 会覆盖此设置。
+api_key = YOUR_API_KEY_HERE
+
+# API 的基础 URL。
+# 如果你使用 OpenAI 官方服务，请保持默认值。
+# 如果你使用第三方代理，请修改为你的代理地址。
+api_url = https://api.openai.com/v1/chat/completions
+
+# 你想使用的语言模型。
+model = gpt-4o
