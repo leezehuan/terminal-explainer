@@ -4,68 +4,32 @@ import sys
 import os
 import requests
 import json
-import configparser
-from pathlib import Path
+import configparser  # 用于解析 .ini 配置文件
+from pathlib import Path # 用于优雅地处理文件路径
 
-def setup_and_handle_config():
+def load_config():
     """
-    检查配置文件是否存在。如果不存在，则自动创建并引导用户进行配置。
-    这是程序首次运行的核心逻辑。
-    """
-    config_dir = Path.home() / '.config' / 'terminal-explainer'
-    config_path = config_dir / 'config.ini'
-
-    # 如果配置文件已存在，则一切正常，直接返回路径让后续函数使用。
-    if config_path.exists():
-        return config_path
-
-    # --- 如果配置文件不存在，则进入创建流程 ---
-    print(f"\033[1;33m提示: 首次运行或配置文件丢失。\n将在以下位置为您创建一个新的配置文件:\n{config_path}\033[0m")
+    加载配置信息。
+    配置的唯一来源是 ~/.config/terminal-explainer/config.ini 文件。
     
-    try:
-        # 创建父目录，exist_ok=True 表示如果目录已存在也不会报错
-        config_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        print(f"\n\033[31m致命错误: 无法创建配置目录 {config_dir}。\n原因: {e}\033[0m")
-        sys.exit(1) # 严重错误，退出
-
-    # 这是配置文件的模板内容
-    config_template = """# 终端解释器 (Terminal Explainer) 配置文件
-[API]
-# 必需！请将这里替换为你的真实 API Key。
-api_key = YOUR_API_KEY_HERE
-
-# API 的基础 URL。如果你使用 OpenAI 官方服务，请保持默认值。
-api_url = https://api.openai.com/v1/chat/completions
-
-# 你想使用的语言模型，例如 gpt-4, gpt-3.5-turbo 等。
-model = gpt-3.5-turbo
-"""
-    try:
-        # 将模板内容写入新的配置文件中
-        with open(config_path, 'w', encoding='utf-8') as f:
-            f.write(config_template)
-    except OSError as e:
-        print(f"\n\033[31m致命错误: 无法写入配置文件 {config_path}。\n原因: {e}\033[0m")
-        sys.exit(1)
-        
-    print(f"\n\033[1;32m✅ 成功创建了默认配置文件！\033[0m")
-    print(f"\033[1;33m下一步: 请立即编辑该文件，填入您的 API Key，然后重新运行命令。\033[0m")
-    
-    # 引导用户后，正常退出。用户需要先配置才能继续使用。
-    sys.exit(0)
-
-def load_config(config_path):
+    返回:
+        一个包含配置信息的字典 (dict)。
     """
-    从给定的路径加载配置。
-    优先级: 环境变量 > 配置文件 > 默认值
-    """
+    # 1. 设置默认配置
     config = {
         'api_key': None,
         'api_url': 'https://api.openai.com/v1/chat/completions',
         'model': 'gpt-3.5-turbo'
     }
+
+    # 2. 从配置文件中读取配置，并覆盖默认值
+    config_path = Path.home() / '.config' / 'terminal-explainer' / 'config.ini'
     
+    # 检查配置文件是否存在
+    if not config_path.exists():
+        # 如果配置文件不存在，直接返回错误，因为这是唯一的配置方式
+        return None, f"\n\033[31m错误: 配置文件不存在！\n请确保 ~/.config/terminal-explainer/config.ini 文件存在并已正确配置。\033[0m"
+
     parser = configparser.ConfigParser()
     parser.read(config_path, encoding='utf-8')
     
@@ -75,42 +39,28 @@ def load_config(config_path):
         config['api_url'] = api_config.get('api_url', config['api_url'])
         config['model'] = api_config.get('model', config['model'])
     
-    if 'OPENAI_API_KEY' in os.environ:
-        config['api_key'] = os.environ['OPENAI_API_KEY']
-
+    # 3. 清理可能存在的占位符
     if config['api_key'] == 'YOUR_API_KEY_HERE':
         config['api_key'] = None
 
-    return config
+    return config, None # 返回配置和空的错误信息
 
 def get_llm_analysis(user_command, command_output, config):
     """
     接收命令、输出和配置，调用大语言模型 API 来进行分析。
-    
-    参数:
-        user_command (str): 用户在终端输入的命令。
-        command_output (str): 执行命令后产生的输出。
-        config (dict): 包含 API Key, URL 和 model 的配置字典。
-        
-    返回:
-        经过格式化的、由 AI 生成的解释字符串 (str)。
     """
-    # 从配置字典中安全地获取各项配置
     api_key = config.get('api_key')
     api_url = config.get('api_url')
     model = config.get('model')
 
-    # 如果最终没有获取到 API Key，则返回错误信息
     if not api_key:
-        return "\n\033[31m错误: API Key 未设置。\n请在环境变量 OPENAI_API_KEY 中提供，或在配置文件 ~/.config/terminal-explainer/config.ini 中设置。\033[0m"
+        return "\n\033[31m错误: API Key 未在配置文件中设置。\n请编辑 ~/.config/terminal-explainer/config.ini 并填入您的 api_key。\033[0m"
 
-    # 设置请求头，用于身份验证
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}"
     }
 
-    # 这是发送给大语言模型的“提示”(Prompt)。它的质量直接决定了AI返回结果的质量。
     prompt = f"""
     你是一个精通中文的 Linux 系统专家和命令行大师。
     用户在终端执行了以下命令，并得到了相应的输出。
@@ -129,58 +79,39 @@ def get_llm_analysis(user_command, command_output, config):
     # 你的专家级解释:
     """
 
-    # 构造要发送的 JSON 数据
     data = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.5, # temperature 越低，输出越稳定；越高，越有创造性
+        "temperature": 0.5,
     }
 
     try:
-        # 发送 POST 请求到 API 服务器，并设置20秒超时
         response = requests.post(api_url, headers=headers, json=data, timeout=20)
-        
-        # 如果服务器返回了错误状态码 (如 401, 404, 500), 则主动抛出异常
         response.raise_for_status()
-        
-        # 尝试将服务器返回的响应文本解析为 JSON 对象
         result_json = response.json()
-        
-        # 从 JSON 对象中提取 AI 的回复内容
         explanation = result_json["choices"][0]["message"]["content"]
-        
-        # 对输出进行美化，使用 ANSI escape code 添加颜色和图标
         formatted_explanation = f"\n\033[1;34m🤖 AI 专家解释:\033[0m\n---\n{explanation}\n---"
         return formatted_explanation
-
     except requests.exceptions.Timeout:
         return "\n\033[31m错误: 请求大语言模型 API 超时。请检查您的网络连接或代理设置。\033[0m"
-    
     except requests.exceptions.HTTPError as e:
-        # 捕获 HTTP 错误，并将服务器返回的详细信息打印出来，方便排错
         return f"\n\033[31m错误: HTTP 请求失败，状态码: {e.response.status_code}。\n服务器响应:\n{e.response.text}\033[0m"
-    
     except json.JSONDecodeError:
-        # 如果服务器的响应不是一个有效的 JSON，则会触发此异常
         return f"\n\033[31m错误: 解析 API 响应失败 (不是有效的 JSON)。\n收到的原始响应内容:\n---\n{response.text}\n---\033[0m"
-    
     except (KeyError, IndexError):
-        # 如果 JSON 结构不符合预期 (例如缺少 "choices" 键)，则会触发此异常
         return f"\n\033[31m错误: 解析 JSON 成功，但数据结构不符合预期。\n收到的 JSON 数据:\n{response.json()}\033[0m"
-    
     except requests.exceptions.RequestException as e:
-        # 捕获其他所有与请求相关的异常，如 DNS 解析失败、连接被拒绝等
         return f"\n\033[31m错误: 网络请求失败: {e}\033[0m"
 
 
 if __name__ == "__main__":
-    # 步骤1: 处理配置。如果不存在则创建并引导用户，然后退出。
-    config_file_path = setup_and_handle_config()
+    app_config, error_message = load_config()
 
-    # 步骤2: 加载配置。程序能走到这里，说明配置文件肯定存在。
-    app_config = load_config(config_file_path)
-
-    # 步骤3: 执行主逻辑
+    # 如果加载配置时就发生错误 (如文件不存在)，直接打印错误并退出
+    if error_message:
+        print(error_message)
+        sys.exit(1)
+    
     if len(sys.argv) != 3:
         print("用法: explain-cli \"<要执行的命令>\" \"<命令的输出>\"")
         sys.exit(1)
