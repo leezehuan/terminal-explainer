@@ -4,47 +4,80 @@ import sys
 import os
 import requests
 import json
-import configparser  # 用于解析 .ini 配置文件
-from pathlib import Path # 用于优雅地处理文件路径
+import configparser
+from pathlib import Path
 
-def load_config():
+def setup_and_handle_config():
     """
-    加载配置信息。
-    遵循的优先级顺序为: 环境变量 > 配置文件 > 代码中的默认值。
-    这提供了最大的灵活性。
+    检查配置文件是否存在。如果不存在，则自动创建并引导用户进行配置。
+    这是程序首次运行的核心逻辑。
+    """
+    config_dir = Path.home() / '.config' / 'terminal-explainer'
+    config_path = config_dir / 'config.ini'
+
+    # 如果配置文件已存在，则一切正常，直接返回路径让后续函数使用。
+    if config_path.exists():
+        return config_path
+
+    # --- 如果配置文件不存在，则进入创建流程 ---
+    print(f"\033[1;33m提示: 首次运行或配置文件丢失。\n将在以下位置为您创建一个新的配置文件:\n{config_path}\033[0m")
     
-    返回:
-        一个包含配置信息的字典 (dict)。
+    try:
+        # 创建父目录，exist_ok=True 表示如果目录已存在也不会报错
+        config_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"\n\033[31m致命错误: 无法创建配置目录 {config_dir}。\n原因: {e}\033[0m")
+        sys.exit(1) # 严重错误，退出
+
+    # 这是配置文件的模板内容
+    config_template = """# 终端解释器 (Terminal Explainer) 配置文件
+[API]
+# 必需！请将这里替换为你的真实 API Key。
+api_key = YOUR_API_KEY_HERE
+
+# API 的基础 URL。如果你使用 OpenAI 官方服务，请保持默认值。
+api_url = https://api.openai.com/v1/chat/completions
+
+# 你想使用的语言模型，例如 gpt-4, gpt-3.5-turbo 等。
+model = gpt-3.5-turbo
+"""
+    try:
+        # 将模板内容写入新的配置文件中
+        with open(config_path, 'w', encoding='utf-8') as f:
+            f.write(config_template)
+    except OSError as e:
+        print(f"\n\033[31m致命错误: 无法写入配置文件 {config_path}。\n原因: {e}\033[0m")
+        sys.exit(1)
+        
+    print(f"\n\033[1;32m✅ 成功创建了默认配置文件！\033[0m")
+    print(f"\033[1;33m下一步: 请立即编辑该文件，填入您的 API Key，然后重新运行命令。\033[0m")
+    
+    # 引导用户后，正常退出。用户需要先配置才能继续使用。
+    sys.exit(0)
+
+def load_config(config_path):
     """
-    # 1. 设置默认配置
+    从给定的路径加载配置。
+    优先级: 环境变量 > 配置文件 > 默认值
+    """
     config = {
         'api_key': None,
         'api_url': 'https://api.openai.com/v1/chat/completions',
         'model': 'gpt-3.5-turbo'
     }
-
-    # 2. 从配置文件中读取配置，并覆盖默认值
-    # 使用 Path.home() 来获取当前用户的主目录，构造配置文件的绝对路径
-    config_path = Path.home() / '.config' / 'terminal-explainer' / 'config.ini'
     
-    if config_path.exists():
-        parser = configparser.ConfigParser()
-        parser.read(config_path, encoding='utf-8') # 使用 utf-8 编码读取
-        
-        # 检查配置文件中是否存在 [API] 区块
-        if 'API' in parser:
-            api_config = parser['API']
-            # 使用 .get() 方法，如果键不存在，则返回默认值，避免出错
-            config['api_key'] = api_config.get('api_key', config['api_key'])
-            config['api_url'] = api_config.get('api_url', config['api_url'])
-            config['model'] = api_config.get('model', config['model'])
+    parser = configparser.ConfigParser()
+    parser.read(config_path, encoding='utf-8')
     
-    # 3. 环境变量具有最高优先级，会覆盖之前所有的设置
+    if 'API' in parser:
+        api_config = parser['API']
+        config['api_key'] = api_config.get('api_key', config['api_key'])
+        config['api_url'] = api_config.get('api_url', config['api_url'])
+        config['model'] = api_config.get('model', config['model'])
+    
     if 'OPENAI_API_KEY' in os.environ:
         config['api_key'] = os.environ['OPENAI_API_KEY']
 
-    # 4. 清理可能存在的占位符
-    # 防止用户忘记修改模板中的 'YOUR_API_KEY_HERE'
     if config['api_key'] == 'YOUR_API_KEY_HERE':
         config['api_key'] = None
 
@@ -140,24 +173,20 @@ def get_llm_analysis(user_command, command_output, config):
         return f"\n\033[31m错误: 网络请求失败: {e}\033[0m"
 
 
-# 当这个脚本作为主程序直接运行时，以下代码块将被执行
 if __name__ == "__main__":
-    # 首先，加载所有配置
-    app_config = load_config()
+    # 步骤1: 处理配置。如果不存在则创建并引导用户，然后退出。
+    config_file_path = setup_and_handle_config()
 
-    # 检查从命令行传入的参数数量是否正确
-    # sys.argv 是一个列表，包含了所有命令行参数
-    # sys.argv[0] 是脚本名, sys.argv[1] 是第一个参数, 以此类推
+    # 步骤2: 加载配置。程序能走到这里，说明配置文件肯定存在。
+    app_config = load_config(config_file_path)
+
+    # 步骤3: 执行主逻辑
     if len(sys.argv) != 3:
         print("用法: explain-cli \"<要执行的命令>\" \"<命令的输出>\"")
-        sys.exit(1) # 异常退出
+        sys.exit(1)
 
-    # 从命令行参数中获取命令和输出
     user_command_arg = sys.argv[1]
     command_output_arg = sys.argv[2]
     
-    # 调用核心分析函数，并传入配置
     analysis = get_llm_analysis(user_command_arg, command_output_arg, app_config)
-    
-    # 将最终结果打印到标准输出
     print(analysis)
