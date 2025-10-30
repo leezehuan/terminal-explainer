@@ -29,7 +29,7 @@ sudo apt install git python3 python3-pip
 **安装步骤:**
 1.  首先，克隆本仓库到您的本地机器：
     ```bash
-    git clone https://github.com/你的用户名/terminal-explainer.git
+    git clone https://github.com/leezehuan/terminal-explainer
     ```
 
 2.  进入项目目录，并使用 `sudo` 运行安装脚本：
