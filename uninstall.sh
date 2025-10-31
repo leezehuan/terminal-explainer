@@ -1,4 +1,5 @@
 #!/bin/bash
+# uninstall.sh
 
 # --- 卸载脚本 ---
 if [ "$EUID" -ne 0 ]; then
@@ -14,7 +15,7 @@ rm -f /usr/local/bin/explain-cli
 # 2. 移除 shell 配置文件
 rm -rf /usr/local/share/terminal-explainer
 
-# 3. 从用户的 shell 配置中移除 source 命令 (使用 sed)
+# 3. 从用户的 shell 配置中移除 source 命令
 USERS_TO_CONFIGURE=()
 if [ -n "$SUDO_USER" ]; then USERS_TO_CONFIGURE+=("$SUDO_USER"); fi
 if [ -n "$LOGNAME" ] && [ "$LOGNAME" != "$SUDO_USER" ]; then USERS_TO_CONFIGURE+=("$LOGNAME"); fi
