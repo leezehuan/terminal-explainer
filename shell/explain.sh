@@ -1,4 +1,4 @@
-# shell/explain.sh (v8 - 修复 ex -c 误判：以原始命令为“命令参数”，对话式上下文作为“输出”上传；保留10k上传限制与追问链)
+# shell/explain.sh (v9 - 增加 ex -turnoff 关闭自动分析；保留10k上传限制、对话式追问上下文与追问链)
 
 # --- 基础路径与状态 ---
 if [ -n "$ZSH_VERSION" ]; then
@@ -231,7 +231,6 @@ __ex_build_followup_context() {
 
       # 历史追问与回答（按时间顺序，从最早到最近）
       if (seg_count >= 1) {
-        # 统计连续 ex -c 的数量 c（已在上面得到）
         if (c > 0) {
           print ""
           print "---"
@@ -318,8 +317,6 @@ __ex_analyze_followup() {
   # 避免自动模式重复分析
   EX_SUPPRESS_AUTO_ONE=1
   EX_IN_HOOK=1
-  # 关键改动：将“命令参数”设置为原始命令（或FOLLOWUP_CONTEXT），
-  # 而不是把 "ex -c ..." 作为命令传给 explain-cli，避免LLM误把 ex 当编辑器解释
   /usr/local/bin/explain-cli "$origin_cmd" "$t_ctx"
   EX_IN_HOOK=0
 
@@ -383,11 +380,19 @@ fi
 
 # --- 用户命令: ex / explain(兼容) ---
 function ex() {
-  # ex -turnon：开启自动分析
+  # ex -turnon：开启自动分析（持久化到 state 文件）
   if [ $# -eq 1 ] && [ "$1" = "-turnon" ]; then
     EX_ALWAYS_ON=1
     echo "on" > "$EX_STATE_FILE"
     echo "✅ 已开启结果分析常开功能。"
+    return 0
+  fi
+
+  # 新增：ex -turnoff：关闭自动分析（同时删除持久化 state 文件）
+  if [ $# -eq 1 ] && [ "$1" = "-turnoff" ]; then
+    EX_ALWAYS_ON=0
+    rm -f "$EX_STATE_FILE" 2>/dev/null || true
+    echo "✅ 已关闭结果分析常开功能。"
     return 0
   fi
 
